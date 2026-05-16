@@ -6,27 +6,30 @@
    ============================================================ */
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Table, message } from 'antd'
+import { Button, Input, Select, Table, message } from 'antd'
 import type { TableProps } from 'antd'
+import { DownloadOutlined, SearchOutlined } from '@ant-design/icons'
 import PageHero from '@/components/PageHero'
 import AnchorAvatar from '@/components/AnchorAvatar'
 import PlatformBadge from '@/components/PlatformBadge'
 import TiltedCard from '@/components/TiltedCard'
-import { anchorApi } from '@/api/services'
-import type { AnchorLeaderboardItem } from '@/api/types'
+import { anchorApi, exportUrl } from '@/api/services'
+import type { AnchorLeaderboardItem, Platform } from '@/api/types'
 import { gradientImage } from '@/lib/placeholder'
 
 const PODIUM_ACCENT = ['#a855f7', '#0ea5e9', '#fbbf24'] as const
 
 export default function AnchorLeaderboardPage() {
   const [items, setItems] = useState<AnchorLeaderboardItem[]>([])
+  const [platform, setPlatform] = useState<Platform | ''>('')
+  const [keyword, setKeyword] = useState('')
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     let alive = true
     setLoading(true)
     anchorApi
-      .leaderboard()
+      .leaderboard({ platform, keyword })
       .then((r) => alive && setItems(r.data ?? []))
       .catch((err) => {
         console.error(err)
@@ -36,10 +39,19 @@ export default function AnchorLeaderboardPage() {
     return () => {
       alive = false
     }
-  }, [])
+  }, [platform, keyword])
 
   const top3 = useMemo(() => items.slice(0, 3), [items])
   const rest = useMemo(() => items.slice(0, 50), [items])
+
+  const exportAnchors = () => {
+    const params = new URLSearchParams()
+    if (platform) params.set('platform', platform)
+    if (keyword) params.set('keyword', keyword)
+    params.set('sort_by', 'avg_gmv')
+    params.set('sort_order', 'desc')
+    window.open(`${exportUrl('anchors')}?${params.toString()}`, '_blank')
+  }
 
   const columns: TableProps<AnchorLeaderboardItem>['columns'] = useMemo(
     () => [
@@ -179,6 +191,33 @@ export default function AnchorLeaderboardPage() {
         eyebrow="04·ANCHOR · A-LB"
         title="ANCHOR LEAGUE"
         description="按 avg_gmv 排名的 TOP 50 主播榜单。前三甲使用 3D Tilted 卡片展示——这是本页唯一的 heavy 装饰。"
+        extra={
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+            <Select
+              allowClear
+              placeholder="平台"
+              value={platform || undefined}
+              onChange={(v) => setPlatform((v as Platform) ?? '')}
+              options={[
+                { label: '淘宝', value: 'taobao' },
+                { label: '抖音', value: 'douyin' },
+                { label: '拼多多', value: 'pdd' },
+              ]}
+              style={{ width: 160 }}
+            />
+            <Input
+              allowClear
+              prefix={<SearchOutlined />}
+              placeholder="搜索主播"
+              value={keyword}
+              onChange={(e) => setKeyword(e.target.value)}
+              style={{ width: 220 }}
+            />
+            <Button icon={<DownloadOutlined />} onClick={exportAnchors}>
+              EXPORT
+            </Button>
+          </div>
+        }
       />
 
       {/* Row 1 — Podium */}

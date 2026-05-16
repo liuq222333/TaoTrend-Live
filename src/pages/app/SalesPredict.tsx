@@ -9,7 +9,7 @@ import PageHero from '@/components/PageHero'
 import KpiTile from '@/components/KpiTile'
 import ChartCard from '@/components/ChartCard'
 import { baseDarkOption, darkAxis } from '@/lib/chart'
-import { categoryApi, intelApi } from '@/api/services'
+import { categoryApi, exportUrl, intelApi } from '@/api/services'
 import type {
   Category,
   PieDatum,
@@ -67,6 +67,16 @@ export default function SalesPredictPage() {
     }
   }
 
+  const handleExport = () => {
+    const values = form.getFieldsValue()
+    const params = new URLSearchParams()
+    if (values.category) params.set('category', String(values.category))
+    if (values.price) params.set('price', String(values.price))
+    if (values.anchor_tier) params.set('anchor_tier', values.anchor_tier)
+    if (values.duration) params.set('duration', String(values.duration))
+    window.open(`${exportUrl('predict')}?${params.toString()}`, '_blank')
+  }
+
   /* ---------- 分布 bar ---------- */
   const distOption: EChartsOption = useMemo(() => {
     const dist: PieDatum[] = result?.dist ?? []
@@ -115,7 +125,7 @@ export default function SalesPredictPage() {
 
   /* ---------- 百分位 gauge ---------- */
   const gaugeOption: EChartsOption = useMemo(() => {
-    const pct = (result?.percentile ?? 0) * 100
+    const pct = result?.percentile ?? (result?.percentile_ratio ?? 0) * 100
     return {
       ...baseDarkOption,
       series: [
@@ -251,6 +261,11 @@ export default function SalesPredictPage() {
             <Button type="primary" htmlType="submit" loading={submitting}>
               PREDICT →
             </Button>
+            {result && (
+              <Button onClick={handleExport}>
+                EXPORT
+              </Button>
+            )}
           </div>
         </Form>
       </section>
@@ -266,61 +281,57 @@ export default function SalesPredictPage() {
             }}
           >
             <KpiTile
-              eyebrow="P-01 · AVG GMV"
-              value={(result.avg ?? 0) / 1e4}
+              eyebrow="P-01 · SALES"
+              value={result.predicted_sales ?? result.avg ?? 0}
               decimals={2}
-              prefix="¥"
-              unit="万"
+              unit="件"
               accent="pulse"
               index={1}
-              hint="样本均值"
+              hint="预测销量"
             />
             <KpiTile
-              eyebrow="P-02 · MEDIAN"
-              value={(result.median ?? 0) / 1e4}
+              eyebrow="P-02 · GMV"
+              value={(result.predicted_gmv ?? 0) / 1e4}
               decimals={2}
               prefix="¥"
               unit="万"
               accent="cyan"
               index={2}
-              hint="中位数"
+              hint="预测成交额"
             />
             <KpiTile
-              eyebrow="P-03 · MAX"
-              value={(result.max ?? 0) / 1e4}
-              decimals={2}
-              prefix="¥"
-              unit="万"
+              eyebrow="P-03 · CONFIDENCE"
+              value={(result.confidence ?? 0) * 100}
+              decimals={1}
+              unit="%"
               accent="lime"
               index={3}
-              hint="历史最高"
+              hint="预测可信度"
             />
             <KpiTile
-              eyebrow="P-04 · MIN"
-              value={(result.min ?? 0) / 1e4}
-              decimals={2}
-              prefix="¥"
-              unit="万"
-              accent="flame"
-              index={4}
-              hint="历史最低"
-            />
-            <KpiTile
-              eyebrow="P-05 · SAMPLES"
+              eyebrow="P-04 · SAMPLES"
               value={result.count ?? 0}
               unit="场"
-              accent="pulse"
-              index={5}
+              accent="flame"
+              index={4}
               hint="匹配样本数"
             />
             <KpiTile
+              eyebrow="P-05 · MEDIAN"
+              value={result.median ?? 0}
+              unit="件"
+              accent="pulse"
+              index={5}
+              hint="样本中位数"
+            />
+            <KpiTile
               eyebrow="P-06 · PERCENTILE"
-              value={(result.percentile ?? 0) * 100}
+              value={result.percentile ?? (result.percentile_ratio ?? 0) * 100}
               decimals={1}
               unit="%"
               accent="pulse"
               index={6}
-              hint="您输入价格在样本中的位次"
+              hint="预测 GMV 分位"
             />
           </div>
 
@@ -344,6 +355,8 @@ export default function SalesPredictPage() {
               height={300}
             />
           </div>
+
+          <ExplainPanel result={result} />
         </>
       )}
 
@@ -369,6 +382,155 @@ export default function SalesPredictPage() {
         </div>
       )}
     </div>
+  )
+}
+
+function ExplainPanel({ result }: { result: SalesPredictResponse }) {
+  const confidence = Math.round((result.confidence ?? 0) * 100)
+
+  return (
+    <section
+      style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+        gap: 24,
+        marginTop: 24,
+      }}
+    >
+      <div
+        style={{
+          background: 'var(--ink-850)',
+          border: '1px solid var(--hairline-soft)',
+          borderRadius: 12,
+          padding: 24,
+        }}
+      >
+        <div className="u-eyebrow" style={{ fontSize: 10, color: 'var(--text-3)', marginBottom: 18 }}>
+          EXPLAIN · KEY DRIVERS
+        </div>
+        <div style={{ display: 'grid', gap: 16 }}>
+          {(result.drivers ?? []).map((driver) => {
+            const width = Math.min(100, Math.max(8, Math.abs(driver.impact) * 220))
+            const color =
+              driver.direction === 'positive' ? 'var(--accent-lime)' : 'var(--accent-flame)'
+            return (
+              <div key={driver.name}>
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    gap: 12,
+                    marginBottom: 8,
+                    fontFamily: 'var(--font-display)',
+                    color: 'var(--text-2)',
+                    fontSize: 12,
+                  }}
+                >
+                  <span>{driver.name}</span>
+                  <span style={{ color }}>
+                    {driver.direction === 'positive' ? '+' : ''}
+                    {(driver.impact * 100).toFixed(1)}%
+                  </span>
+                </div>
+                <div
+                  style={{
+                    height: 7,
+                    borderRadius: 999,
+                    background: 'rgba(255,255,255,0.06)',
+                    overflow: 'hidden',
+                  }}
+                >
+                  <div
+                    style={{
+                      width: `${width}%`,
+                      height: '100%',
+                      borderRadius: 999,
+                      background: color,
+                    }}
+                  />
+                </div>
+                <div style={{ marginTop: 6, color: 'var(--text-4)', fontSize: 12 }}>
+                  {driver.text}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+
+      <div
+        style={{
+          background: 'var(--ink-850)',
+          border: '1px solid var(--hairline-soft)',
+          borderRadius: 12,
+          padding: 24,
+        }}
+      >
+        <div className="u-eyebrow" style={{ fontSize: 10, color: 'var(--text-3)', marginBottom: 16 }}>
+          DECISION · SIGNAL
+        </div>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'baseline',
+            justifyContent: 'space-between',
+            gap: 16,
+            marginBottom: 18,
+          }}
+        >
+          <span style={{ color: 'var(--text-3)', fontSize: 13 }}>预测可信度</span>
+          <span
+            style={{
+              color: confidence >= 70 ? 'var(--accent-lime)' : 'var(--accent-flame)',
+              fontFamily: 'var(--font-display)',
+              fontSize: 28,
+              fontWeight: 700,
+            }}
+          >
+            {confidence}%
+          </span>
+        </div>
+        <div
+          style={{
+            height: 8,
+            borderRadius: 999,
+            background: 'rgba(255,255,255,0.06)',
+            overflow: 'hidden',
+            marginBottom: 22,
+          }}
+        >
+          <div
+            style={{
+              width: `${Math.max(4, confidence)}%`,
+              height: '100%',
+              borderRadius: 999,
+              background:
+                confidence >= 70
+                  ? 'linear-gradient(90deg, #84cc16, #0ea5e9)'
+                  : 'linear-gradient(90deg, #f43f5e, #fbbf24)',
+            }}
+          />
+        </div>
+        <div style={{ display: 'grid', gap: 10 }}>
+          {(result.suggestions ?? []).map((suggestion) => (
+            <div
+              key={suggestion}
+              style={{
+                padding: '11px 12px',
+                borderRadius: 8,
+                border: '1px solid var(--hairline-soft)',
+                background: 'var(--ink-800)',
+                color: 'var(--text-2)',
+                fontSize: 13,
+                lineHeight: 1.55,
+              }}
+            >
+              {suggestion}
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
   )
 }
 

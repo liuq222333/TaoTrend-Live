@@ -15,6 +15,7 @@ def _product_to_dict(p):
     return {
         'id': p.id,
         'name': p.name,
+        'category': p.category_id,
         'category_id': p.category_id,
         'category_name': p.category.name if p.category_id else '',
         'brand': p.brand,
@@ -74,6 +75,71 @@ def _fallback_hot(k):
     """fallback 2: 全库热门，按 sales 倒序。"""
     qs = models.Product.objects.select_related('category').order_by('-sales')[:k]
     return [_product_to_dict(p) for p in qs]
+
+
+def _fallback_hot_explained(k, exclude_ids=None):
+    """fallback 2: 全库热门，带推荐解释。"""
+    exclude_ids = set(exclude_ids or [])
+    qs = models.Product.objects.select_related('category').exclude(id__in=exclude_ids).order_by('-sales')[:k]
+    out = []
+    for idx, p in enumerate(qs):
+        d = _product_to_dict(p)
+        d.update({
+            'favorited': 0,
+            'score': round(max(1.0, 100 - idx * 4 + p.sales / 100000.0), 2),
+            'strategy': 'hot',
+            'reason_type': 'global_hot',
+            'reason': '全站高销量热门商品，适合作为冷启动参考',
+        })
+        out.append(d)
+    return out
+
+
+def _fallback_browse_explained(user_id, k, exclude_ids=None):
+    """fallback 1: 浏览历史 top 品类，带推荐解释。"""
+    exclude_ids = set(exclude_ids or [])
+    cat_ids = list(
+        models.BrowseLog.objects.filter(user_id=user_id)
+        .values_list('product__category_id', flat=True)[:200]
+    )
+    if not cat_ids:
+        return []
+    counts = {}
+    for cid in cat_ids:
+        if cid:
+            counts[cid] = counts.get(cid, 0) + 1
+    top_cats = sorted(counts.items(), key=lambda x: x[1], reverse=True)[:3]
+    top_cat_ids = [c[0] for c in top_cats]
+    cat_names = {
+        c.id: c.name
+        for c in models.Category.objects.filter(id__in=top_cat_ids)
+    }
+
+    qs = (
+        models.Product.objects.filter(category_id__in=top_cat_ids)
+        .exclude(id__in=exclude_ids)
+        .select_related('category')
+        .order_by('-sales')[:k * 3]
+    )
+    products = list(qs)
+    if len(products) > k:
+        import random
+        random.shuffle(products)
+
+    out = []
+    for p in products[:k]:
+        d = _product_to_dict(p)
+        cat_name = cat_names.get(p.category_id, d.get('category_name') or '相关品类')
+        browse_count = counts.get(p.category_id, 0)
+        d.update({
+            'favorited': 0,
+            'score': round(55 + min(35, browse_count * 4) + p.sales / 100000.0, 2),
+            'strategy': 'history',
+            'reason_type': 'browse_history',
+            'reason': f'根据你最近浏览的 {cat_name} 类商品推荐',
+        })
+        out.append(d)
+    return out
 
 
 def recommend_for_user(user_id, k=9):
@@ -146,6 +212,107 @@ def recommend_for_user(user_id, k=9):
                 result.append(h)
             if len(result) >= k:
                 break
+    return result[:k]
+
+
+def recommend_for_user_explained(user_id, k=9):
+    """返回带推荐原因的商品列表。
+
+    策略顺序与 recommend_for_user 保持一致：
+    CF -> 浏览历史 -> 全库热门。
+    """
+    fav_ids = list(
+        models.FavoriteList.objects.filter(user_id=user_id)
+        .values_list('product_id', flat=True)
+    )
+    fav_set = set(fav_ids)
+
+    if not fav_ids:
+        result = _fallback_browse_explained(user_id, k, exclude_ids=fav_set)
+        if len(result) < k:
+            seen = {r['id'] for r in result} | fav_set
+            result.extend(_fallback_hot_explained(k * 2, exclude_ids=seen))
+        return result[:k]
+
+    fav_products = list(
+        models.Product.objects.filter(id__in=fav_ids)
+        .select_related('category')
+        .values('id', 'category_id', 'category__name')
+    )
+    cat_counts = {}
+    cat_names = {}
+    for fp in fav_products:
+        cid = fp['category_id']
+        if cid:
+            cat_counts[cid] = cat_counts.get(cid, 0) + 1
+            cat_names[cid] = fp.get('category__name') or '相关品类'
+    top_cats = [c for c, _ in sorted(cat_counts.items(), key=lambda x: x[1], reverse=True)[:3]]
+
+    if not top_cats:
+        return _fallback_hot_explained(k, exclude_ids=fav_set)
+
+    candidates = list(
+        models.Product.objects
+        .filter(category_id__in=top_cats)
+        .exclude(id__in=fav_set)
+        .select_related('category')
+        .order_by('?')[:60]
+    )
+    if not candidates:
+        result = _fallback_browse_explained(user_id, k, exclude_ids=fav_set)
+        if len(result) < k:
+            seen = {r['id'] for r in result} | fav_set
+            result.extend(_fallback_hot_explained(k * 2, exclude_ids=seen))
+        return result[:k]
+
+    scored = []
+    for c in candidates:
+        similarity_score = 0.0
+        for fid in fav_ids:
+            similarity_score += similarity(c.id, fid)
+        category_hits = cat_counts.get(c.category_id, 0)
+        hot_score = c.sales / 10000.0
+        score = similarity_score * 100 + category_hits * 6 + hot_score
+        scored.append((score, similarity_score, category_hits, c))
+    scored.sort(key=lambda x: x[0], reverse=True)
+
+    result = []
+    for score, similarity_score, category_hits, p in scored[:k]:
+        d = _product_to_dict(p)
+        cat_name = d.get('category_name') or cat_names.get(p.category_id, '相关品类')
+        if similarity_score > 0:
+            reason_type = 'similar_favorite'
+            reason = f'因为你收藏过与它相似的 {cat_name} 类商品'
+        elif category_hits > 0:
+            reason_type = 'same_category'
+            reason = f'因为你收藏过 {category_hits} 件 {cat_name} 类商品'
+        else:
+            reason_type = 'hot_in_category'
+            reason = f'{cat_name} 类近期热销商品，与你的偏好接近'
+        d.update({
+            'favorited': 0,
+            'score': round(score, 2),
+            'strategy': 'cf',
+            'reason_type': reason_type,
+            'reason': reason,
+        })
+        result.append(d)
+
+    if len(result) < k:
+        seen = {r['id'] for r in result} | fav_set
+        for item in _fallback_browse_explained(user_id, k, exclude_ids=seen):
+            if item['id'] not in seen:
+                result.append(item)
+                seen.add(item['id'])
+            if len(result) >= k:
+                break
+        if len(result) < k:
+            for item in _fallback_hot_explained(k * 2, exclude_ids=seen):
+                if item['id'] not in seen:
+                    result.append(item)
+                    seen.add(item['id'])
+                if len(result) >= k:
+                    break
     return result[:k]
 
 

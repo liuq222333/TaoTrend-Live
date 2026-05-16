@@ -15,13 +15,14 @@ import AnchorAvatar from '@/components/AnchorAvatar'
 import PlatformBadge from '@/components/PlatformBadge'
 import { baseDarkOption, darkAxis, pulseFlameGradient } from '@/lib/chart'
 import { anchorApi } from '@/api/services'
-import type { Anchor, LiveStream } from '@/api/types'
+import type { Anchor, AnchorRiskProfile, LiveStream } from '@/api/types'
 
 export default function AnchorDetailPage() {
   const params = useParams<{ id: string }>()
   const nav = useNavigate()
   const id = params.id
   const [anchor, setAnchor] = useState<Anchor | null>(null)
+  const [risk, setRisk] = useState<AnchorRiskProfile | null>(null)
   const [streams, setStreams] = useState<LiveStream[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -29,12 +30,12 @@ export default function AnchorDetailPage() {
     if (!id) return
     let alive = true
     setLoading(true)
-    anchorApi
-      .detail(id)
-      .then((r) => {
+    Promise.all([anchorApi.detail(id), anchorApi.riskProfile(id)])
+      .then(([r, riskResult]) => {
         if (!alive) return
         setAnchor(r.data)
         setStreams(r.recent_streams ?? [])
+        setRisk(riskResult.data)
       })
       .catch((err) => {
         console.error(err)
@@ -280,6 +281,52 @@ export default function AnchorDetailPage() {
           hint={anchor ? <PlatformBadge platform={anchor.platform} variant="cn" /> : '—'}
         />
       </div>
+
+      {risk && (
+        <section
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'minmax(220px, 0.35fr) minmax(0, 0.65fr)',
+            gap: 18,
+            background: 'var(--ink-850)',
+            border: '1px solid var(--hairline-soft)',
+            borderRadius: 12,
+            padding: 24,
+            marginBottom: 24,
+          }}
+        >
+          <div>
+            <div className="u-eyebrow" style={{ color: 'var(--text-3)', fontSize: 10, marginBottom: 12 }}>
+              RISK PROFILE
+            </div>
+            <div
+              style={{
+                fontFamily: 'var(--font-display)',
+                fontSize: 48,
+                fontWeight: 800,
+                color: risk.risk_level === 'high' ? 'var(--accent-flame)' : risk.risk_level === 'medium' ? '#fbbf24' : 'var(--accent-lime)',
+              }}
+            >
+              {risk.risk_score.toFixed(1)}
+            </div>
+            <div style={{ color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: 1.2 }}>
+              {risk.risk_level} · stability {(risk.gmv_stability * 100).toFixed(0)}%
+            </div>
+          </div>
+          <div style={{ display: 'grid', gap: 10 }}>
+            {risk.risk_reasons.map((reason) => (
+              <div key={reason} style={{ padding: 12, border: '1px solid var(--hairline-soft)', borderRadius: 8, background: 'var(--ink-800)', color: 'var(--text-2)' }}>
+                {reason}
+              </div>
+            ))}
+            {risk.suggestions.map((suggestion) => (
+              <div key={suggestion} style={{ color: 'var(--text-3)', fontSize: 13 }}>
+                {suggestion}
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* Row 2 — GMV trend chart */}
       <ChartCard

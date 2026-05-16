@@ -5,8 +5,9 @@
    - Row 2: 1.6:1  GMV trend line + platform donut
    - Row 3: full   category rose
    ============================================================ */
-import { useEffect, useState } from 'react'
-import { Empty, message } from 'antd'
+import { useCallback, useEffect, useState } from 'react'
+import { Button, Empty, Switch, message } from 'antd'
+import { ReloadOutlined } from '@ant-design/icons'
 import type { EChartsOption } from 'echarts'
 import PageHero, { LivePill } from '@/components/PageHero'
 import KpiTile from '@/components/KpiTile'
@@ -31,32 +32,47 @@ export default function OverviewPage() {
   const [platforms, setPlatforms] = useState<PieDatum[]>([])
   const [categories, setCategories] = useState<PieDatum[]>([])
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
+  const [autoRefresh, setAutoRefresh] = useState(true)
+  const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null)
 
-  useEffect(() => {
-    let alive = true
-    setLoading(true)
-    Promise.all([
+  const load = useCallback(async (initial = false) => {
+    if (initial) setLoading(true)
+    else setRefreshing(true)
+    try {
+      const [ov, tr, pl, cat] = await Promise.all([
       dashboardApi.overview(),
       dashboardApi.gmvTrend(),
       dashboardApi.platformShare(),
       dashboardApi.categoryShare(),
-    ])
-      .then(([ov, tr, pl, cat]) => {
-        if (!alive) return
-        setOverview(ov)
-        setTrend(tr.data ?? [])
-        setPlatforms(pl.data ?? [])
-        setCategories(cat.data ?? [])
-      })
-      .catch((err) => {
-        console.error(err)
-        message.error('总览数据加载失败')
-      })
-      .finally(() => alive && setLoading(false))
-    return () => {
-      alive = false
+      ])
+      setOverview(ov)
+      setTrend(tr.data ?? [])
+      setPlatforms(pl.data ?? [])
+      setCategories(cat.data ?? [])
+      setLastUpdatedAt(new Date())
+    } catch (err) {
+      console.error(err)
+      message.warning('总览数据刷新失败，已保留上一版数据')
+    } finally {
+      if (initial) setLoading(false)
+      setRefreshing(false)
     }
   }, [])
+
+  useEffect(() => {
+    void load(true)
+  }, [load])
+
+  useEffect(() => {
+    if (!autoRefresh) return undefined
+    const timer = window.setInterval(() => {
+      void load(false)
+    }, 30000)
+    return () => {
+      window.clearInterval(timer)
+    }
+  }, [autoRefresh, load])
 
   /* ---------- KPI 行 ---------- */
   const totalGmvYi = (overview?.total_gmv ?? 0) / 1e8 // 元 → 亿
@@ -174,6 +190,20 @@ export default function OverviewPage() {
         title="MISSION CONTROL"
         description="实时聚合淘宝、抖音、拼多多三平台的直播 GMV、主播规模、商品分布与场次密度，为运营提供秒级总览。"
         right={<LivePill label="LIVE · 3S" />}
+        extra={
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+            <Switch checked={autoRefresh} onChange={setAutoRefresh} />
+            <span style={{ color: 'var(--text-3)', fontFamily: 'var(--font-mono)', fontSize: 11 }}>
+              AUTO · 30S
+            </span>
+            <Button icon={<ReloadOutlined />} loading={refreshing} onClick={() => void load(false)}>
+              REFRESH
+            </Button>
+            <span style={{ color: 'var(--text-4)', fontFamily: 'var(--font-mono)', fontSize: 11 }}>
+              UPDATED · {lastUpdatedAt ? lastUpdatedAt.toLocaleTimeString('zh-CN', { hour12: false }) : '--:--:--'}
+            </span>
+          </div>
+        }
       />
 
       {/* Row 1 — KPI grid */}

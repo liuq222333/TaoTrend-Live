@@ -4,15 +4,15 @@
    sticky filter bar + AntD Table (server pagination).
    ============================================================ */
 import { useEffect, useMemo, useState } from 'react'
-import { Input, Select, Table, message } from 'antd'
+import { Button, Input, Select, Table, message } from 'antd'
 import type { TableProps } from 'antd'
-import { SearchOutlined } from '@ant-design/icons'
+import { DownloadOutlined, SearchOutlined } from '@ant-design/icons'
 import { Link } from 'react-router-dom'
 import dayjs from 'dayjs'
 import PageHero from '@/components/PageHero'
 import AnchorAvatar from '@/components/AnchorAvatar'
 import PlatformBadge from '@/components/PlatformBadge'
-import { livestreamApi } from '@/api/services'
+import { exportUrl, livestreamApi } from '@/api/services'
 import type { LiveStream, Platform } from '@/api/types'
 
 const PAGE_SIZE_OPTS = ['10', '20', '50']
@@ -24,25 +24,18 @@ export default function LivestreamsPage() {
   const [pageSize, setPageSize] = useState(20)
   const [platform, setPlatform] = useState<Platform | ''>('')
   const [keyword, setKeyword] = useState('')
+  const [sortBy, setSortBy] = useState('start_at')
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
     let alive = true
     setLoading(true)
     livestreamApi
-      .list({ platform, page, limit: pageSize })
+      .list({ platform, keyword, sort_by: sortBy, sort_order: sortOrder, page, limit: pageSize })
       .then((r) => {
         if (!alive) return
-        const list = r.data ?? []
-        // keyword 是前端过滤（后端没有 keyword 参数；spec 列出，但 services 未传）
-        const filtered = keyword
-          ? list.filter(
-              (s) =>
-                s.title.includes(keyword) ||
-                s.anchor_name?.includes(keyword),
-            )
-          : list
-        setData(filtered)
+        setData(r.data ?? [])
         setTotal(r.count ?? 0)
       })
       .catch((err) => {
@@ -53,7 +46,16 @@ export default function LivestreamsPage() {
     return () => {
       alive = false
     }
-  }, [platform, page, pageSize, keyword])
+  }, [platform, page, pageSize, keyword, sortBy, sortOrder])
+
+  const exportLivestreams = () => {
+    const params = new URLSearchParams()
+    if (platform) params.set('platform', platform)
+    if (keyword) params.set('keyword', keyword)
+    params.set('sort_by', sortBy)
+    params.set('sort_order', sortOrder)
+    window.open(`${exportUrl('livestreams')}?${params.toString()}`, '_blank')
+  }
 
   const columns: TableProps<LiveStream>['columns'] = useMemo(
     () => [
@@ -278,6 +280,35 @@ export default function LivestreamsPage() {
           }}
           style={{ width: 280 }}
         />
+        <Select
+          value={sortBy}
+          onChange={(v) => {
+            setSortBy(v)
+            setPage(1)
+          }}
+          options={[
+            { label: '开播时间', value: 'start_at' },
+            { label: 'GMV', value: 'gmv' },
+            { label: '转化率', value: 'conversion_rate' },
+            { label: '峰值观众', value: 'peak_audience' },
+          ]}
+          style={{ width: 140 }}
+        />
+        <Select
+          value={sortOrder}
+          onChange={(v) => {
+            setSortOrder(v)
+            setPage(1)
+          }}
+          options={[
+            { label: '降序', value: 'desc' },
+            { label: '升序', value: 'asc' },
+          ]}
+          style={{ width: 100 }}
+        />
+        <Button icon={<DownloadOutlined />} onClick={exportLivestreams}>
+          EXPORT
+        </Button>
         <div
           style={{
             marginLeft: 'auto',

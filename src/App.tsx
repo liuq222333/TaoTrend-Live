@@ -12,13 +12,16 @@ import Login from '@/pages/Login'
 import Register from '@/pages/Register'
 
 import OverviewPage from '@/pages/app/Overview'
+import MonitorPage from '@/pages/app/Monitor'
 import CategoryHeatmapPage from '@/pages/app/CategoryHeatmap'
 import CategoryGrowthPage from '@/pages/app/CategoryGrowth'
+import CategoryOpportunityPage from '@/pages/app/CategoryOpportunity'
 import LivestreamsPage from '@/pages/app/Livestreams'
 import LivestreamDetailPage from '@/pages/app/LivestreamDetail'
 import AnchorLeaderboardPage from '@/pages/app/AnchorLeaderboard'
 import AnchorDetailPage from '@/pages/app/AnchorDetail'
 import ProductsPage from '@/pages/app/Products'
+import ProductDetailPage from '@/pages/app/ProductDetail'
 import SalesPredictPage from '@/pages/app/SalesPredict'
 import WordcloudPage from '@/pages/app/Wordcloud'
 import FavoritesPage from '@/pages/app/Favorites'
@@ -108,13 +111,16 @@ export default function App() {
               >
                 <Route index element={<Navigate to="overview" replace />} />
                 <Route path="overview" element={<OverviewPage />} />
+                <Route path="monitor" element={<MonitorPage />} />
                 <Route path="categories/heatmap" element={<CategoryHeatmapPage />} />
                 <Route path="categories/growth" element={<CategoryGrowthPage />} />
+                <Route path="categories/opportunity" element={<CategoryOpportunityPage />} />
                 <Route path="livestreams" element={<LivestreamsPage />} />
                 <Route path="livestreams/:id" element={<LivestreamDetailPage />} />
                 <Route path="anchors" element={<AnchorLeaderboardPage />} />
                 <Route path="anchors/:id" element={<AnchorDetailPage />} />
                 <Route path="products" element={<ProductsPage />} />
+                <Route path="products/:id" element={<ProductDetailPage />} />
                 <Route path="predict" element={<SalesPredictPage />} />
                 <Route path="wordcloud" element={<WordcloudPage />} />
                 <Route path="me/favorites" element={<FavoritesPage />} />

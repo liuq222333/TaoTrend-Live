@@ -4,16 +4,18 @@
    左侧 240px CategoryTree + 右侧 ProductCard 网格
    ============================================================ */
 import { useEffect, useMemo, useState } from 'react'
-import { Empty, Pagination, Spin, Tree, message } from 'antd'
+import { Button, Empty, InputNumber, Pagination, Select, Spin, Tree, message } from 'antd'
 import type { TreeDataNode } from 'antd'
-import { SearchOutlined } from '@ant-design/icons'
+import { DownloadOutlined, SearchOutlined } from '@ant-design/icons'
+import { useNavigate } from 'react-router-dom'
 import PageHero from '@/components/PageHero'
 import ProductCard from '@/components/ProductCard'
 import GlareHover from '@/components/GlareHover'
-import { categoryApi, productApi } from '@/api/services'
+import { categoryApi, exportUrl, productApi } from '@/api/services'
 import type { Category, Product } from '@/api/types'
 
 export default function ProductsPage() {
+  const nav = useNavigate()
   const [tree, setTree] = useState<Category[]>([])
   const [products, setProducts] = useState<Product[]>([])
   const [total, setTotal] = useState(0)
@@ -22,6 +24,13 @@ export default function ProductsPage() {
   const [keyword, setKeyword] = useState('')
   const [keywordInput, setKeywordInput] = useState('')
   const [category, setCategory] = useState<number | ''>('')
+  const [brand, setBrand] = useState('')
+  const [minPrice, setMinPrice] = useState<number | ''>('')
+  const [maxPrice, setMaxPrice] = useState<number | ''>('')
+  const [minSales, setMinSales] = useState<number | ''>('')
+  const [minRating, setMinRating] = useState<number | ''>('')
+  const [sortBy, setSortBy] = useState('sales')
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
   const [loading, setLoading] = useState(false)
 
   // load tree once
@@ -46,7 +55,14 @@ export default function ProductsPage() {
     productApi
       .list({
         keyword,
+        brand,
         category,
+        min_price: minPrice,
+        max_price: maxPrice,
+        min_sales: minSales,
+        min_rating: minRating,
+        sort_by: sortBy,
+        sort_order: sortOrder,
         page,
         limit: pageSize,
       })
@@ -63,7 +79,7 @@ export default function ProductsPage() {
     return () => {
       alive = false
     }
-  }, [keyword, category, page, pageSize])
+  }, [keyword, brand, category, minPrice, maxPrice, minSales, minRating, sortBy, sortOrder, page, pageSize])
 
   const treeData = useMemo<TreeDataNode[]>(() => categoriesToTree(tree), [tree])
 
@@ -74,6 +90,20 @@ export default function ProductsPage() {
   const handleSearch = () => {
     setKeyword(keywordInput.trim())
     setPage(1)
+  }
+
+  const exportProducts = () => {
+    const params = new URLSearchParams()
+    if (keyword) params.set('keyword', keyword)
+    if (brand) params.set('brand', brand)
+    if (category !== '') params.set('category', String(category))
+    if (minPrice !== '') params.set('min_price', String(minPrice))
+    if (maxPrice !== '') params.set('max_price', String(maxPrice))
+    if (minSales !== '') params.set('min_sales', String(minSales))
+    if (minRating !== '') params.set('min_rating', String(minRating))
+    params.set('sort_by', sortBy)
+    params.set('sort_order', sortOrder)
+    window.open(`${exportUrl('products')}?${params.toString()}`, '_blank')
   }
 
   return (
@@ -153,6 +183,9 @@ export default function ProductsPage() {
             >
               {total.toLocaleString()} 件 · 页 {page}
             </div>
+            <Button icon={<DownloadOutlined />} onClick={exportProducts}>
+              EXPORT
+            </Button>
           </div>
         }
       />
@@ -228,6 +261,57 @@ export default function ProductsPage() {
 
         {/* Product Grid */}
         <main>
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
+              gap: 12,
+              marginBottom: 16,
+              padding: 16,
+              background: 'rgba(16,16,21,0.78)',
+              border: '1px solid var(--hairline-soft)',
+              borderRadius: 10,
+            }}
+          >
+            <input
+              value={brand}
+              onChange={(e) => {
+                setBrand(e.target.value)
+                setPage(1)
+              }}
+              placeholder="品牌"
+              style={{
+                height: 32,
+                borderRadius: 6,
+                border: '1px solid var(--hairline-soft)',
+                background: 'var(--ink-800)',
+                color: 'var(--text-1)',
+                padding: '0 10px',
+              }}
+            />
+            <InputNumber placeholder="最低价" min={0} value={minPrice || undefined} onChange={(v) => { setMinPrice(v ?? ''); setPage(1) }} />
+            <InputNumber placeholder="最高价" min={0} value={maxPrice || undefined} onChange={(v) => { setMaxPrice(v ?? ''); setPage(1) }} />
+            <InputNumber placeholder="最低销量" min={0} value={minSales || undefined} onChange={(v) => { setMinSales(v ?? ''); setPage(1) }} />
+            <InputNumber placeholder="最低评分" min={0} max={5} step={0.1} value={minRating || undefined} onChange={(v) => { setMinRating(v ?? ''); setPage(1) }} />
+            <Select
+              value={sortBy}
+              onChange={(v) => setSortBy(v)}
+              options={[
+                { label: '销量排序', value: 'sales' },
+                { label: '价格排序', value: 'price' },
+                { label: '评分排序', value: 'rating' },
+                { label: '上架时间', value: 'created_at' },
+              ]}
+            />
+            <Select
+              value={sortOrder}
+              onChange={(v) => setSortOrder(v)}
+              options={[
+                { label: '降序', value: 'desc' },
+                { label: '升序', value: 'asc' },
+              ]}
+            />
+          </div>
           {loading ? (
             <div
               style={{
@@ -270,6 +354,7 @@ export default function ProductsPage() {
                   <ProductCard
                     product={p}
                     onFavorite={handleFavorite}
+                    onClick={(item) => nav(`/app/products/${item.id}`)}
                   />
                 </GlareHover>
               ))}

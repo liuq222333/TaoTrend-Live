@@ -6,6 +6,8 @@ import {
   FireOutlined,
   HeartOutlined,
   HistoryOutlined,
+  AlertOutlined,
+  BulbOutlined,
   RadarChartOutlined,
   RiseOutlined,
   ShoppingOutlined,
@@ -20,6 +22,7 @@ export const menuItems: NonNullable<MenuProps['items']> = [
     label: '01 · OVERVIEW',
     children: [
       { key: '/app/overview', label: 'CONTROL', icon: <RadarChartOutlined /> },
+      { key: '/app/monitor', label: 'MONITOR', icon: <AlertOutlined /> },
     ],
   },
   {
@@ -28,6 +31,7 @@ export const menuItems: NonNullable<MenuProps['items']> = [
     children: [
       { key: '/app/categories/heatmap', label: 'HEATMAP', icon: <FireOutlined /> },
       { key: '/app/categories/growth', label: 'GROWTH', icon: <RiseOutlined /> },
+      { key: '/app/categories/opportunity', label: 'OPPORTUNITY', icon: <BulbOutlined /> },
     ],
   },
   {
@@ -73,8 +77,10 @@ export const menuItems: NonNullable<MenuProps['items']> = [
 
 export const titleMap: Record<string, string> = {
   '/app/overview': 'CONTROL',
+  '/app/monitor': 'MONITOR',
   '/app/categories/heatmap': 'HEATMAP',
   '/app/categories/growth': 'GROWTH',
+  '/app/categories/opportunity': 'OPPORTUNITY',
   '/app/livestreams': 'STREAMS',
   '/app/anchors': 'LEADERBOARD',
   '/app/products': 'CATALOG',
